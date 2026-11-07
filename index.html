@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NeonLove Live</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body {
+    background: #050508;
+    color: #fff;
+    font-family: system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(15, 15, 24, 0.92);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    z-index: 10;
+  }
+  .brand {
+    font-weight: 800;
+    font-size: 16px;
+    color: #ff2a5f;
+    text-shadow: 0 0 10px #ff2a5f;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #ffcc00; box-shadow: 0 0 8px #ffcc00;
+  }
+  .status-dot.online {
+    background: #00ff88; box-shadow: 0 0 10px #00ff88;
+  }
+  .room-box {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .room-input {
+    background: #12121e; color: #fff; border: 1px solid #333;
+    border-radius: 8px; padding: 5px 8px; font-size: 12px; width: 125px;
+    text-align: center; font-weight: 700; letter-spacing: 0.5px;
+  }
+  .btn-wake {
+    background: linear-gradient(135deg, #ff1e56, #ffac41);
+    color: #fff; border: none; border-radius: 8px;
+    padding: 6px 11px; font-weight: 700; font-size: 12px;
+    box-shadow: 0 0 12px rgba(255, 30, 86, 0.6);
+  }
+  #canvas-container {
+    flex: 1;
+    position: relative;
+    background: radial-gradient(circle at center, #0d0d16 0%, #030305 100%);
+  }
+  canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    touch-action: none;
+  }
+  .lock-clock {
+    position: absolute;
+    top: 22px; left: 0; right: 0;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+  .lock-time {
+    font-size: 44px; font-weight: 200; letter-spacing: 2px;
+    text-shadow: 0 0 15px rgba(255,255,255,0.25);
+  }
+  .lock-sub {
+    font-size: 12px; color: #aaa; letter-spacing: 1px; text-transform: uppercase;
+  }
+  .quick-bar {
+    display: flex; gap: 6px; overflow-x: auto;
+    padding: 8px 12px; background: rgba(12, 12, 20, 0.95);
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .chip {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #fff; padding: 6px 12px; border-radius: 999px;
+    font-size: 12px; white-space: nowrap;
+  }
+  .controls {
+    padding: 10px 14px 14px;
+    background: rgba(15, 15, 24, 0.98);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .colors-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .swatches {
+    display: flex; gap: 10px; align-items: center;
+  }
+  .swatch {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid transparent;
+    transition: transform 0.15s;
+  }
+  .swatch.active {
+    transform: scale(1.22);
+    border-color: #fff;
+  }
+  .sliders-row {
+    display: flex; align-items: center; gap: 12px; font-size: 12px; color: #ccc;
+  }
+  .sliders-row label {
+    display: flex; align-items: center; gap: 6px; flex: 1;
+  }
+  input[type=range] { flex: 1; accent-color: #ff2a5f; }
+  .btn-clear {
+    background: #232334; color: #ff6b81; border: 1px solid #ff4757;
+    padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div id="statusDot" class="status-dot"></div>
+    <span>NeonLove</span>
+  </div>
+  <div class="room-box">
+    <input id="roomInput" class="room-input" value="JORDAN-LYDIE" onchange="changeRoom()" />
+    <button class="btn-wake" onclick="sendWakeSignal()">🔔 Réveiller Lydie</button>
+  </div>
+</div>
+
+<div id="canvas-container">
+  <div class="lock-clock">
+    <div id="clockTime" class="lock-time">12:00</div>
+    <div class="lock-sub">Écran Direct Jordan ❤️ Lydie</div>
+  </div>
+  <canvas id="neonCanvas"></canvas>
+</div>
+
+<div class="quick-bar">
+  <button class="chip" onclick="sendPreset('Je t\'aime ❤️', '#ff1744')">Je t'aime ❤️</button>
+  <button class="chip" onclick="sendPreset('LOVE ✨', '#ffea00')">LOVE ✨</button>
+  <button class="chip" onclick="sendPreset('Achète du Coca 🥤', '#ff9100')">Achète du Coca 🥤</button>
+  <button class="chip" onclick="sendPreset('Bisous 😘', '#f50057')">Bisous 😘</button>
+  <button class="chip" onclick="sendPreset('Appelle-moi 📞', '#00e5ff')">Appelle-moi 📞</button>
+</div>
+
+<div class="controls">
+  <div class="colors-row">
+    <div class="swatches">
+      <div class="swatch active" style="background:#ff1744;box-shadow:0 0 10px #ff1744" onclick="setColor('#ff1744', this)"></div>
+      <div class="swatch" style="background:#ffea00;box-shadow:0 0 10px #ffea00" onclick="setColor('#ffea00', this)"></div>
+      <div class="swatch" style="background:#ff9100;box-shadow:0 0 10px #ff9100" onclick="setColor('#ff9100', this)"></div>
+      <div class="swatch" style="background:#f50057;box-shadow:0 0 10px #f50057" onclick="setColor('#f50057', this)"></div>
+      <div class="swatch" style="background:#00e5ff;box-shadow:0 0 10px #00e5ff" onclick="setColor('#00e5ff', this)"></div>
+      <div class="swatch" style="background:#00e676;box-shadow:0 0 10px #00e676" onclick="setColor('#00e676', this)"></div>
+    </div>
+    <button class="btn-clear" onclick="clearAll(true)">Effacer</button>
+  </div>
+  <div class="sliders-row">
+    <label>Taille <input id="sizeRange" type="range" min="3" max="22" value="8"></label>
+    <label>Lumière <input id="glowRange" type="range" min="8" max="45" value="24"></label>
+  </div>
+</div>
+
+<script>
+  const canvas = document.getElementById('neonCanvas');
+  const ctx = canvas.getContext('2d');
+  let currentColor = '#ff1744';
+  let isDrawing = false;
+  let lastPoint = null;
+  let client = null;
+  let roomCode = 'JORDAN-LYDIE';
+  let lastWakeSent = 0;
+
+  function resizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const temp = ctx.getImageData(0, 0, canvas.width || 1, canvas.height || 1);
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    ctx.putImageData(temp, 0, 0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }
+  window.addEventListener('resize', resizeCanvas);
+  setTimeout(resizeCanvas, 50);
+
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clockTime').textContent =
+      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  function setColor(color, el) {
+    currentColor = color;
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    if (el) el.classList.add('active');
+  }
+
+  function drawNeonSegment(x0, y0, x1, y1, color, size, glow) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Halo externe lumineux
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 1.6;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = glow * 1.5;
+    ctx.stroke();
+
+    // Coeur blanc incandescent du tube néon
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(2, size * 0.45);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = glow * 0.7;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNeonText(text, color, glow) {
+    ctx.save();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const fontSize = Math.min(canvas.width / 8, 42);
+    ctx.font = `800 ${fontSize}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.shadowColor = color;
+    ctx.shadowBlur = glow * 1.6;
+    ctx.fillStyle = color;
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+    ctx.shadowBlur = glow * 0.6;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    ctx.restore();
+  }
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches ? e.touches[0] : e;
+    return {
+      x: (touch.clientX - rect.left) / rect.width,
+      y: (touch.clientY - rect.top) / rect.height
+    };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    isDrawing = true;
+    lastPoint = getPos(e);
+    autoWakePartner();
+  }
+
+  function moveDraw(e) {
+    if (!isDrawing) return;
+    e.preventDefault();
+    const pt = getPos(e);
+    const size = parseInt(document.getElementById('sizeRange').value, 10);
+    const glow = parseInt(document.getElementById('glowRange').value, 10);
+
+    drawNeonSegment(
+      lastPoint.x * canvas.width,
+      lastPoint.y * canvas.height,
+      pt.x * canvas.width,
+      pt.y * canvas.height,
+      currentColor, size, glow
+    );
+
+    publishEvent({
+      t: 'd',
+      x0: Number(lastPoint.x.toFixed(4)),
+      y0: Number(lastPoint.y.toFixed(4)),
+      x1: Number(pt.x.toFixed(4)),
+      y1: Number(pt.y.toFixed(4)),
+      c: currentColor,
+      s: size,
+      g: glow
+    });
+
+    lastPoint = pt;
+  }
+
+  function endDraw() {
+    isDrawing = false;
+    lastPoint = null;
+  }
+
+  canvas.addEventListener('mousedown', startDraw);
+  canvas.addEventListener('mousemove', moveDraw);
+  window.addEventListener('mouseup', endDraw);
+  canvas.addEventListener('touchstart', startDraw, { passive: false });
+  canvas.addEventListener('touchmove', moveDraw, { passive: false });
+  window.addEventListener('touchend', endDraw);
+
+  function clearAll(broadcast) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (broadcast) publishEvent({ t: 'c' });
+  }
+
+  function sendPreset(text, color) {
+    const glow = parseInt(document.getElementById('glowRange').value, 10);
+    drawNeonText(text, color, glow);
+    publishEvent({ t: 'txt', text, c: color, g: glow });
+    sendWakeSignal();
+  }
+
+  function autoWakePartner() {
+    const now = Date.now();
+    if (now - lastWakeSent > 15000) {
+      lastWakeSent = now;
+      sendWakeSignal();
+    }
+  }
+
+  function sendWakeSignal() {
+    fetch(`https://ntfy.sh/neonlove_${roomCode.toLowerCase()}_alert`, {
+      method: 'POST',
+      body: 'Nouveau dessin lumineux de Jordan !'
+    }).catch(() => {});
+  }
+
+  function connectMQTT() {
+    if (client) client.end();
+    roomCode = document.getElementById('roomInput').value.trim().toUpperCase() || 'JORDAN-LYDIE';
+    if (window.AndroidNative) {
+      window.AndroidNative.setChannelCode(roomCode);
+    }
+    const topic = `neonlove/live/${roomCode}`;
+    client = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+
+    client.on('connect', () => {
+      document.getElementById('statusDot').classList.add('online');
+      client.subscribe(topic);
+    });
+
+    client.on('message', (t, payload) => {
+      try {
+        const data = JSON.parse(payload.toString());
+        if (data.sender === clientId) return;
+        if (data.t === 'd') {
+          drawNeonSegment(
+            data.x0 * canvas.width,
+            data.y0 * canvas.height,
+            data.x1 * canvas.width,
+            data.y1 * canvas.height,
+            data.c, data.s, data.g
+          );
+        } else if (data.t === 'c') {
+          clearAll(false);
+        } else if (data.t === 'txt') {
+          drawNeonText(data.text, data.c, data.g);
+          if (window.AndroidNative) window.AndroidNative.triggerLockScreenWake();
+        }
+      } catch (e) {}
+    });
+  }
+
+  const clientId = 'nl_' + Math.random().toString(36).substring(2, 9);
+  function publishEvent(obj) {
+    if (client && client.connected) {
+      obj.sender = clientId;
+      client.publish(`neonlove/live/${roomCode}`, JSON.stringify(obj));
+    }
+  }
+
+  function changeRoom() {
+    connectMQTT();
+  }
+
+  connectMQTT();
+</script>
+</body>
+</html>
